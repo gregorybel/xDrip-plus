@@ -138,12 +138,14 @@ public class DexCollectionService extends Service {
     private final boolean use_rfduino_bluetooth = Home.getPreferencesBooleanDefaultFalse("use_rfduino_bluetooth");
   //  private final boolean use_polling = Home.getPreferencesBooleanDefaultFalse(PREF_DEX_COLLECTION_POLLING) && DexCollectionType.hasLibre();
     private final boolean use_polling = Home.getPreferencesBooleanDefaultFalse(PREF_DEX_COLLECTION_POLLING);
-    private final UUID xDripDataService = use_transmiter_pl_bluetooth ? UUID.fromString(HM10Attributes.TRANSMITER_PL_SERVICE) : UUID.fromString(HM10Attributes.HM_10_SERVICE);
-    private final UUID xDripDataCharacteristic = use_transmiter_pl_bluetooth ? UUID.fromString(HM10Attributes.TRANSMITER_PL_RX_TX) : UUID.fromString(HM10Attributes.HM_RX_TX);
+    private final UUID xDripDataService = use_transmiter_pl_bluetooth ? UUID.fromString(HM10Attributes.TRANSMITER_PL_SERVICE) : UUID.fromString(HM10Attributes.BLUCON_SERVICE);
+    private final UUID xDripDataCharacteristic = use_transmiter_pl_bluetooth ? UUID.fromString(HM10Attributes.TRANSMITER_PL_RX_TX) : UUID.fromString(HM10Attributes.BLUCON_UART_RX);
     // Experimental support for rfduino from Tomasz Stachowicz
-    private final UUID xDripDataCharacteristicSend = use_rfduino_bluetooth ? UUID.fromString(HM10Attributes.HM_TX) : UUID.fromString(HM10Attributes.HM_RX_TX);
+    private final UUID xDripDataCharacteristicSend = use_rfduino_bluetooth ? UUID.fromString(HM10Attributes.HM_TX) : UUID.fromString(HM10Attributes.BLUCON_UART_TX);
 
-    private final String DEFAULT_BT_PIN = "000000"; // HM10/11 default pin
+    //private final String DEFAULT_BT_PIN = "000000"; // HM10/11 default pin
+    private final String DEFAULT_BT_PIN = "170985"; // HM10/11 default pin
+
 
     public final UUID CCCD = UUID.fromString(HM10Attributes.CLIENT_CHARACTERISTIC_CONFIG);
     public final UUID nrfDataService = UUID.fromString(HM10Attributes.NRF_UART_SERVICE);
@@ -493,6 +495,7 @@ public class DexCollectionService extends Service {
                 if ((mDeviceAddress != null) && (device != null) && (!areWeBonded(mDeviceAddress))) {
                     if (JoH.ratelimit("dexcollect-create-bond", 20)) {
                         Log.d(TAG, "Attempting to create bond to: " + mDeviceAddress);
+                        Log.d(TAG, "Use BT Pin!");
                         device.setPin(JoH.convertPinToBytes(DEFAULT_BT_PIN));
                         device.createBond();
                     }
@@ -547,7 +550,8 @@ public class DexCollectionService extends Service {
                         Log.w(TAG, "onServicesDiscovered: use_rfduino_bluetooth send characteristic " + xDripDataCharacteristicSend + " found");
                         mCharacteristicSend = gattService.getCharacteristic(xDripDataCharacteristicSend);
                     } else {
-                        mCharacteristicSend = mCharacteristic;
+                        //mCharacteristicSend = mCharacteristic;
+                        mCharacteristicSend = gattService.getCharacteristic(xDripDataCharacteristicSend); //hack blucon by gregorybel
                     }
 
 
@@ -782,6 +786,10 @@ public class DexCollectionService extends Service {
         long timestamp = new Date().getTime();
         last_time_seen = JoH.ts();
         watchdog_count=0;
+
+        Log.i(TAG, "setSerialDataToTransmitterRawData: buffer[0]="+ (buffer[0]));
+
+
         if (XbridgePlus.isXbridgeExtensionPacket(buffer)) {
             // handle xBridge+ protocol packets
             final byte[] reply = XbridgePlus.decodeXbridgeExtensionPacket(buffer);
@@ -854,12 +862,23 @@ public class DexCollectionService extends Service {
                         CheckBridgeBattery.checkBridgeBattery();
                     }
                 }
-            } else if(buffer.length>10 && new String(buffer) != null && new String(buffer).startsWith("battery: ")){
+            } else if(buffer.length>10 && new String(buffer) != null && new String(buffer).startsWith("battery: ")) {
                 //bluereader intermidiate support
-                if(BgReading.last()==null || BgReading.last().timestamp + (4*60*1000) < System.currentTimeMillis())
-                {
+                if (BgReading.last() == null || BgReading.last().timestamp + (4 * 60 * 1000) < System.currentTimeMillis()) {
                     sendBtMessage(new byte[]{0x6C});
                 }
+
+
+            } else if (buffer[0] == -53 /* 0xCB*/ || buffer[0] == -117 /* 0x8B */) {
+                //BluCon hack by gregorybel
+                Log.v(TAG, "BlueCon data");
+                if (buffer[0] == -53 && buffer[1] == 0x01) {
+                    //sendBtMessage(new byte[]{0x01, 0x00});
+                    sendBtMessage(new byte[]{0x01, 0x0d, 0x09, 0x00});
+                    //sendBtMessage(new byte[]{-126 /*0x81*/, 0x0a, 0x00});
+
+                }
+
             } else {
                 processNewTransmitterData(TransmitterData.create(buffer, len, timestamp), timestamp);
             }
