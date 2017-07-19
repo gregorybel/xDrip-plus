@@ -871,12 +871,30 @@ public class DexCollectionService extends Service {
 
             } else if (buffer[0] == -53 /* 0xCB*/ || buffer[0] == -117 /* 0x8B */) {
                 //BluCon hack by gregorybel
-                Log.v(TAG, "BlueCon data");
-                if (buffer[0] == -53 && buffer[1] == 0x01) {
-                    //sendBtMessage(new byte[]{0x01, 0x00});
-                    sendBtMessage(new byte[]{0x01, 0x0d, 0x09, 0x00});
-                    //sendBtMessage(new byte[]{-126 /*0x81*/, 0x0a, 0x00});
 
+                //String strRecCmd = buffer.toString().toLowerCase();
+                String strRecCmd = hexToString(buffer,len).toLowerCase();
+                String strByteSend = "";
+
+                Log.v(TAG, "BlueCon data: "+strRecCmd);
+
+                //TODO add states!
+                if (strRecCmd.equalsIgnoreCase("cb010000")) {
+                    strByteSend = "010d0900";
+                } else if (strRecCmd.startsWith("8bd9")) {
+                    strByteSend = "810a00";//ack
+                } else if (strRecCmd.startsWith("8b0a00")) {//ack
+                    strByteSend = "010d0e0103";//getting indexdataeata
+                } else if (strRecCmd.startsWith("8bde03")) {//response index data
+                    strByteSend = "010d0e0108";//getNowGlucoseData
+                } else if (strRecCmd.startsWith("8bde08")) {//got getNowGlucoseData
+                    strByteSend = "010c0e00";//sleep cmd
+                }  else if (strRecCmd.startsWith("8bde08")) {
+                    Log.e(TAG, "rec error");
+                }
+
+                if (strByteSend != "") {
+                    sendBtMessage(hexStringToByteArray(strByteSend));
                 }
 
             } else {
@@ -884,6 +902,36 @@ public class DexCollectionService extends Service {
             }
         }
     }
+
+    public static String hexToString(byte[] buffer, int len){
+        StringBuilder sb = new StringBuilder();
+
+        for (int count = 0; count < len ; count += 1)
+        {
+            int decimalL = buffer[count] & 0xf;
+            int decimalH = (buffer[count] >> 4) & 0xf;
+
+            String hexL = Integer.toHexString(buffer[count] & 0xf);
+            String hexH = Integer.toHexString((buffer[count] >> 4) & 0xf);
+
+            sb.append(hexH);
+            sb.append(hexL);
+        }
+
+        return sb.toString();
+    }
+
+    public static byte[] hexStringToByteArray(String s) {
+        int len = s.length();
+        byte[] data = new byte[len/2];
+
+        for(int i = 0; i < len; i+=2){
+            data[i/2] = (byte) ((Character.digit(s.charAt(i), 16) << 4) + Character.digit(s.charAt(i+1), 16));
+        }
+
+        return data;
+    }
+
 
     private void processNewTransmitterData(TransmitterData transmitterData, long timestamp) {
         if (transmitterData == null) {
