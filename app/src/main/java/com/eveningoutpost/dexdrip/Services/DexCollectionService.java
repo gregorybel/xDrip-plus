@@ -74,6 +74,10 @@ import static com.eveningoutpost.dexdrip.UtilityModels.BgGraphBuilder.DEXCOM_PER
 
 @TargetApi(Build.VERSION_CODES.KITKAT)
 public class DexCollectionService extends Service {
+
+    private int m_nowGlucoseOffset = 0;
+
+
     private final static String TAG = DexCollectionService.class.getSimpleName();
     private static final boolean d = false;
     private SharedPreferences prefs;
@@ -787,9 +791,6 @@ public class DexCollectionService extends Service {
         last_time_seen = JoH.ts();
         watchdog_count=0;
 
-        Log.i(TAG, "setSerialDataToTransmitterRawData: buffer[0]="+ (buffer[0]));
-
-
         if (XbridgePlus.isXbridgeExtensionPacket(buffer)) {
             // handle xBridge+ protocol packets
             final byte[] reply = XbridgePlus.decodeXbridgeExtensionPacket(buffer);
@@ -876,21 +877,42 @@ public class DexCollectionService extends Service {
                 String strRecCmd = hexToString(buffer,len).toLowerCase();
                 String strByteSend = "";
 
-                Log.v(TAG, "BlueCon data: "+strRecCmd);
+                Log.i(TAG, "BlueCon data: "+strRecCmd);
 
                 //TODO add states!
                 if (strRecCmd.equalsIgnoreCase("cb010000")) {
+                    Log.i(TAG, "wakeup received");
                     strByteSend = "010d0900";
+                    Log.i(TAG, "getPatchInfo");
                 } else if (strRecCmd.startsWith("8bd9")) {
-                    strByteSend = "810a00";//ack
-                } else if (strRecCmd.startsWith("8b0a00")) {//ack
-                    strByteSend = "010d0e0103";//getting indexdataeata
-                } else if (strRecCmd.startsWith("8bde03")) {//response index data
-                    strByteSend = "010d0e0108";//getNowGlucoseData
-                } else if (strRecCmd.startsWith("8bde08")) {//got getNowGlucoseData
-                    strByteSend = "010c0e00";//sleep cmd
+                    Log.i(TAG, "Patch Info received");
+                    strByteSend = "810a00";
+                    Log.i(TAG, "Send ACK");
+                } else if (strRecCmd.startsWith("8b0a00")) {
+                    Log.i(TAG, "Got ACK");
+                    strByteSend = "010d0e0103";
+                    Log.i(TAG, "getNowGlucoseDataIndexCommand");
+                } else if (strRecCmd.startsWith("8bde03")) {
+                    Log.i(TAG, "gotNowDataIndex");
+                    //strByteSend = "010d0e0108";
+
+
+                    int blockNumber = blockNumberForNowGlucoseData(buffer);
+                    Log.i(TAG, "block Number is "+blockNumber);
+
+                    strByteSend = "010d0e010"+ Integer.toHexString(blockNumber);//getNowGlucoseData
+
+
+                    Log.i(TAG, "getNowGlucoseData");
+                } else if (strRecCmd.startsWith("8bde")) {
+                    double currentGlucose = nowGetGlucoseValue(buffer);
+
+                    Log.i(TAG, "*****************got getNowGlucoseData = " + currentGlucose);
+
+                    strByteSend = "010c0e00";
+                    Log.i(TAG, "Send sleep cmd");
                 }  else if (strRecCmd.startsWith("8bde08")) {
-                    Log.e(TAG, "rec error");
+                    Log.e(TAG, "Got error");
                 }
 
                 if (strByteSend != "") {
@@ -903,14 +925,87 @@ public class DexCollectionService extends Service {
         }
     }
 
+
+
+
+/*
+ * extract trend index from FRAM block #3 from the libre sensor
+ * input: string with blucon answer to trend index request, including 6 starting protocol bytes
+ * return: 2 byte string containing the next abolute block index to be read from
+ * the libre sensor
+ */
+
+    private int blockNumberForNowGlucoseData(byte[] input)
+    {
+        int nowGlucoseIndex2 = 0;
+        int nowGlucoseIndex3 = 0;
+
+        nowGlucoseIndex2 = (int)input[5];
+
+        // caculate byte position in sensor body
+        nowGlucoseIndex2 = (nowGlucoseIndex2 * 6) + 4;
+
+        // decrement index to get the index where the last valid BG reading is stored
+        nowGlucoseIndex2 -= 6;
+        // adjust round robin
+        if ( nowGlucoseIndex2 < 4 )
+            nowGlucoseIndex2 = nowGlucoseIndex2 + 96;
+
+        // calculate the absolute block number which correspond to trend index
+        nowGlucoseIndex3 = 3 + (nowGlucoseIndex2/8);
+
+        // calculate offset of the 2 bytes in the block
+        m_nowGlucoseOffset = nowGlucoseIndex2 % 8;
+
+        Log.i(TAG, "m_nowGlucoseOffset="+m_nowGlucoseOffset);
+
+        return(nowGlucoseIndex3);
+    }
+
+/*
+ * rescale raw BG reading to BG data format used in xDrip+
+ * use 8.5 devider
+ * raw format is in 1000 range
+ * xDrip format is 100 range
+ */
+
+    private double getGlucose(long rawGlucose)
+    {
+        // standard devicder for raw Libre data (1000 range) to 100 range
+        return((double)rawGlucose / 8.5);
+    }
+
+/*
+ * extract BG reading from the raw data block containing the most recent BG reading
+ * input: bytearray with blucon answer including 3 header protocol bytes
+ * uses nowGlucoseOffset to calculate the offset of the two bytes neede
+ * return: BG reading in float
+ */
+
+    private double nowGetGlucoseValue(byte[] input)
+    {
+        double curGluc;
+        long rawGlucose;
+
+        // grep 2 bytes with BG data from input bytearray, mask out 12 LSB bits and rescale for xDrip+
+        //rawGlucose = (input[3+m_nowGlucoseOffset+1]&0x0F)*16 + input[3+m_nowGlucoseOffset];
+        rawGlucose = ((input[3+m_nowGlucoseOffset+1]&0x0F)<<8) | (input[3+m_nowGlucoseOffset]&0xFF);
+        Log.i(TAG, "rawGlucose="+rawGlucose);
+
+        // rescale
+        curGluc = getGlucose(rawGlucose);
+
+        return(curGluc);
+    }
+
+
+
+
     public static String hexToString(byte[] buffer, int len){
         StringBuilder sb = new StringBuilder();
 
         for (int count = 0; count < len ; count += 1)
         {
-            int decimalL = buffer[count] & 0xf;
-            int decimalH = (buffer[count] >> 4) & 0xf;
-
             String hexL = Integer.toHexString(buffer[count] & 0xf);
             String hexH = Integer.toHexString((buffer[count] >> 4) & 0xf);
 
