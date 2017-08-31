@@ -909,6 +909,11 @@ public class DexCollectionService extends Service {
 
                     Log.i(TAG, "*****************got getNowGlucoseData = " + currentGlucose);
 
+                    processNewTransmitterData(TransmitterData.create((int) currentGlucose*1000, (int) currentGlucose*1000, 0, timestamp), timestamp);
+
+
+
+
                     strByteSend = "010c0e00";
                     Log.i(TAG, "Send sleep cmd");
                 }  else if (strRecCmd.startsWith("8bde08")) {
