@@ -76,7 +76,15 @@ import static com.eveningoutpost.dexdrip.UtilityModels.Constants.LIBRE_MULTIPLIE
 @TargetApi(Build.VERSION_CODES.KITKAT)
 public class DexCollectionService extends Service {
 
+    //For blucon
     private int m_nowGlucoseOffset = 0;
+    private String currentCommand = "";
+    public enum BLUCON_STATES {
+        INITIAL
+    }
+
+
+
 
 
     private final static String TAG = DexCollectionService.class.getSimpleName();
@@ -885,47 +893,133 @@ public class DexCollectionService extends Service {
     private void handleBluconData(byte[] buffer, int len, long timestamp)
     {
         String strRecCmd = hexToString(buffer,len).toLowerCase();
-        String strByteSend = "";
+        int cmdFound = 0;
+
 
         Log.i(TAG, "BlueCon data: "+strRecCmd);
 
         //TODO add states!
+
         if (strRecCmd.equalsIgnoreCase("cb010000")) {
             Log.i(TAG, "wakeup received");
-            strByteSend = "010d0900";
-            Log.i(TAG, "getPatchInfo");
-        } else if (strRecCmd.startsWith("8bd9")) {
-            Log.i(TAG, "Patch Info received");
-            strByteSend = "810a00";
-            Log.i(TAG, "Send ACK");
-        } else if (strRecCmd.startsWith("8b0a00")) {
+            currentCommand = "";
+            cmdFound = 1;
+        }
+
+        // BluconACKRespons will come in two different situations
+        // 1) after we have sent an ackwakeup command
+        // 2) after we have a sleep command
+        if (strRecCmd.startsWith("8b0a00")) {
+            cmdFound = 1;
             Log.i(TAG, "Got ACK");
-            strByteSend = "010d0e0103";
-            Log.i(TAG, "getNowGlucoseDataIndexCommand");
-        } else if (strRecCmd.startsWith("8bde03")) {
+
+            if (currentCommand.startsWith("810a00")) {//ACK sent
+                //ack received
+                currentCommand = "010d0e0103";
+                Log.i(TAG, "getNowGlucoseDataIndexCommand");
+            } else {
+                Log.i(TAG, "Got sleep ack, resetting initialstate!");
+                currentCommand = "";
+            }
+        }
+
+        if (strRecCmd.startsWith("8b1a02")) {
+            cmdFound = 1;
+            Log.e(TAG, "Got NACK");
+
+            if (strRecCmd.startsWith("8b1a020014")) {
+                Log.e(TAG, "Got error: UNKNOWN");
+            }
+
+
+            currentCommand = "";
+        }
+
+        if (currentCommand == "" && strRecCmd.equalsIgnoreCase("cb010000")) {
+            cmdFound = 1;
+            Log.i(TAG, "wakeup received");
+            currentCommand = "010d0900";
+            Log.i(TAG, "getPatchInfo");
+        } else if (currentCommand.startsWith("010d0900") /*getPatchInfo*/ && strRecCmd.startsWith("8bd9")) {
+            cmdFound = 1;
+            Log.i(TAG, "Patch Info received");
+            currentCommand = "810a00";
+            Log.i(TAG, "Send ACK");
+        } else if (currentCommand.startsWith("010d0e0103") /*getNowDataIndex*/ && strRecCmd.startsWith("8bde")) {
+            cmdFound = 1;
             Log.i(TAG, "gotNowDataIndex");
 
             int blockNumber = blockNumberForNowGlucoseData(buffer);
             Log.i(TAG, "block Number is "+blockNumber);
 
-            strByteSend = "010d0e010"+ Integer.toHexString(blockNumber);//getNowGlucoseData
+            currentCommand = "010d0e010"+ Integer.toHexString(blockNumber);//getNowGlucoseData
 
             Log.i(TAG, "getNowGlucoseData");
-        } else if (strRecCmd.startsWith("8bde")) {
+
+
+        } else if (currentCommand.startsWith("010d0e01") /*getNowGlucoseData*/ && strRecCmd.startsWith("8bde")) {
+            cmdFound = 1;
             int currentGlucose = nowGetGlucoseValue(buffer);
 
             Log.i(TAG, "*****************got getNowGlucoseData = " + currentGlucose);
 
             processNewTransmitterData(TransmitterData.create(currentGlucose, currentGlucose, 100 /*battery*/, timestamp), timestamp);
 
-            strByteSend = "010c0e00";
+            currentCommand = "010c0e00";
             Log.i(TAG, "Send sleep cmd");
-        }  else if (strRecCmd.startsWith("8bde08")) {
-            Log.e(TAG, "Got error");
         }
 
-        if (strByteSend != "") {
-            sendBtMessage(hexStringToByteArray(strByteSend));
+
+
+
+/*
+        if (strRecCmd.equalsIgnoreCase("cb010000")) {
+                        Log.i(TAG, "wakeup received");
+                        strByteSend = "010d0900";
+                        Log.i(TAG, "getPatchInfo");
+        } else if (strRecCmd.startsWith("8bd9")) {
+                    Log.i(TAG, "Patch Info received");
+                    strByteSend = "810a00";
+                    Log.i(TAG, "Send ACK");
+        } else if (strRecCmd.startsWith("8b0a00")) {
+            Log.i(TAG, "Got ACK");
+                strByteSend = "010d0e0103";
+                Log.i(TAG, "getNowGlucoseDataIndexCommand");
+            } else if (strRecCmd.startsWith("8bde03")) {
+                Log.i(TAG, "gotNowDataIndex");
+
+                int blockNumber = blockNumberForNowGlucoseData(buffer);
+                Log.i(TAG, "block Number is "+blockNumber);
+
+                strByteSend = "010d0e010"+ Integer.toHexString(blockNumber);//getNowGlucoseData
+
+                Log.i(TAG, "getNowGlucoseData");
+            } else if (strRecCmd.startsWith("8bde")) {
+                int currentGlucose = nowGetGlucoseValue(buffer);
+
+                Log.i(TAG, "*****************got getNowGlucoseData = " + currentGlucose);
+
+                processNewTransmitterData(TransmitterData.create(currentGlucose, currentGlucose, 100 , timestamp), timestamp);
+
+                strByteSend = "010c0e00";
+                Log.i(TAG, "Send sleep cmd");
+            }  else if (strRecCmd.startsWith("8bde08")) {
+                Log.e(TAG, "Got error");
+            }
+
+*/
+
+
+
+
+        if (currentCommand != "" && cmdFound == 1) {
+            sendBtMessage(hexStringToByteArray(currentCommand));
+        } else {
+            if (cmdFound == 0) {
+                Log.e(TAG, "*******************************COMMAND NOT FOUND!!!!!!!!!!-> " + strRecCmd);
+            }
+
+            Log.e(TAG, "Nothing to send!");
         }
     }
 
