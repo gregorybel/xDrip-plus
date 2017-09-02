@@ -71,6 +71,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static com.eveningoutpost.dexdrip.UtilityModels.BgGraphBuilder.DEXCOM_PERIOD;
+import static com.eveningoutpost.dexdrip.UtilityModels.Constants.LIBRE_MULTIPLIER;
 
 @TargetApi(Build.VERSION_CODES.KITKAT)
 public class DexCollectionService extends Service {
@@ -872,57 +873,7 @@ public class DexCollectionService extends Service {
 
             } else if (buffer[0] == -53 /* 0xCB*/ || buffer[0] == -117 /* 0x8B */) {
                 //BluCon hack by gregorybel
-
-                //String strRecCmd = buffer.toString().toLowerCase();
-                String strRecCmd = hexToString(buffer,len).toLowerCase();
-                String strByteSend = "";
-
-                Log.i(TAG, "BlueCon data: "+strRecCmd);
-
-                //TODO add states!
-                if (strRecCmd.equalsIgnoreCase("cb010000")) {
-                    Log.i(TAG, "wakeup received");
-                    strByteSend = "010d0900";
-                    Log.i(TAG, "getPatchInfo");
-                } else if (strRecCmd.startsWith("8bd9")) {
-                    Log.i(TAG, "Patch Info received");
-                    strByteSend = "810a00";
-                    Log.i(TAG, "Send ACK");
-                } else if (strRecCmd.startsWith("8b0a00")) {
-                    Log.i(TAG, "Got ACK");
-                    strByteSend = "010d0e0103";
-                    Log.i(TAG, "getNowGlucoseDataIndexCommand");
-                } else if (strRecCmd.startsWith("8bde03")) {
-                    Log.i(TAG, "gotNowDataIndex");
-                    //strByteSend = "010d0e0108";
-
-
-                    int blockNumber = blockNumberForNowGlucoseData(buffer);
-                    Log.i(TAG, "block Number is "+blockNumber);
-
-                    strByteSend = "010d0e010"+ Integer.toHexString(blockNumber);//getNowGlucoseData
-
-
-                    Log.i(TAG, "getNowGlucoseData");
-                } else if (strRecCmd.startsWith("8bde")) {
-                    double currentGlucose = nowGetGlucoseValue(buffer);
-
-                    Log.i(TAG, "*****************got getNowGlucoseData = " + currentGlucose);
-
-                    processNewTransmitterData(TransmitterData.create((int) currentGlucose*1000, (int) currentGlucose*1000, 0, timestamp), timestamp);
-
-
-
-
-                    strByteSend = "010c0e00";
-                    Log.i(TAG, "Send sleep cmd");
-                }  else if (strRecCmd.startsWith("8bde08")) {
-                    Log.e(TAG, "Got error");
-                }
-
-                if (strByteSend != "") {
-                    sendBtMessage(hexStringToByteArray(strByteSend));
-                }
+                handleBluconData(buffer, len, timestamp);
 
             } else {
                 processNewTransmitterData(TransmitterData.create(buffer, len, timestamp), timestamp);
@@ -930,7 +881,53 @@ public class DexCollectionService extends Service {
         }
     }
 
+    //BluCon hack by gregorybel
+    private void handleBluconData(byte[] buffer, int len, long timestamp)
+    {
+        String strRecCmd = hexToString(buffer,len).toLowerCase();
+        String strByteSend = "";
 
+        Log.i(TAG, "BlueCon data: "+strRecCmd);
+
+        //TODO add states!
+        if (strRecCmd.equalsIgnoreCase("cb010000")) {
+            Log.i(TAG, "wakeup received");
+            strByteSend = "010d0900";
+            Log.i(TAG, "getPatchInfo");
+        } else if (strRecCmd.startsWith("8bd9")) {
+            Log.i(TAG, "Patch Info received");
+            strByteSend = "810a00";
+            Log.i(TAG, "Send ACK");
+        } else if (strRecCmd.startsWith("8b0a00")) {
+            Log.i(TAG, "Got ACK");
+            strByteSend = "010d0e0103";
+            Log.i(TAG, "getNowGlucoseDataIndexCommand");
+        } else if (strRecCmd.startsWith("8bde03")) {
+            Log.i(TAG, "gotNowDataIndex");
+
+            int blockNumber = blockNumberForNowGlucoseData(buffer);
+            Log.i(TAG, "block Number is "+blockNumber);
+
+            strByteSend = "010d0e010"+ Integer.toHexString(blockNumber);//getNowGlucoseData
+
+            Log.i(TAG, "getNowGlucoseData");
+        } else if (strRecCmd.startsWith("8bde")) {
+            int currentGlucose = nowGetGlucoseValue(buffer);
+
+            Log.i(TAG, "*****************got getNowGlucoseData = " + currentGlucose);
+
+            processNewTransmitterData(TransmitterData.create(currentGlucose, currentGlucose, 100 /*battery*/, timestamp), timestamp);
+
+            strByteSend = "010c0e00";
+            Log.i(TAG, "Send sleep cmd");
+        }  else if (strRecCmd.startsWith("8bde08")) {
+            Log.e(TAG, "Got error");
+        }
+
+        if (strByteSend != "") {
+            sendBtMessage(hexStringToByteArray(strByteSend));
+        }
+    }
 
 
 /*
@@ -973,11 +970,14 @@ public class DexCollectionService extends Service {
  * raw format is in 1000 range
  * xDrip format is 100 range
  */
-
-    private double getGlucose(long rawGlucose)
+    private int getGlucose(long rawGlucose)
     {
-        // standard devicder for raw Libre data (1000 range) to 100 range
-        return((double)rawGlucose / 8.5);
+        double intermBg;
+        // standard devider for raw Libre data 1000 range
+
+        intermBg = rawGlucose * LIBRE_MULTIPLIER;
+
+        return((int) intermBg );
     }
 
 /*
@@ -987,9 +987,9 @@ public class DexCollectionService extends Service {
  * return: BG reading in float
  */
 
-    private double nowGetGlucoseValue(byte[] input)
+    private int nowGetGlucoseValue(byte[] input)
     {
-        double curGluc;
+        int curGluc;
         long rawGlucose;
 
         // grep 2 bytes with BG data from input bytearray, mask out 12 LSB bits and rescale for xDrip+
