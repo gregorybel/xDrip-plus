@@ -895,10 +895,15 @@ public class DexCollectionService extends Service {
         String strRecCmd = hexToString(buffer,len).toLowerCase();
         int cmdFound = 0;
 
-
         Log.i(TAG, "BlueCon data: "+strRecCmd);
 
-        //TODO add states!
+
+
+        /* if we find battery state set it lke this:
+            Home.setPreferencesInt("bridge_battery", ByteBuffer.wrap(buffer).get(11));
+
+         */
+
 
         if (strRecCmd.equalsIgnoreCase("cb010000")) {
             Log.i(TAG, "wakeup received");
@@ -963,7 +968,7 @@ public class DexCollectionService extends Service {
 
             Log.i(TAG, "*****************got getNowGlucoseData = " + currentGlucose);
 
-            processNewTransmitterData(TransmitterData.create(currentGlucose, currentGlucose, 100 /*battery*/, timestamp), timestamp);
+            processNewTransmitterData(TransmitterData.create(currentGlucose, currentGlucose, 0 /*battery forced to 0 as not used*/, timestamp), timestamp);
 
             currentCommand = "010c0e00";
             Log.i(TAG, "Send sleep cmd");
@@ -1019,12 +1024,18 @@ public class DexCollectionService extends Service {
                 Log.e(TAG, "*******************************COMMAND NOT FOUND!!!!!!!!!!-> " + strRecCmd);
             }
 
+            if (strRecCmd.startsWith("cb020000")) {
+                Log.e(TAG, "is bridge battery low????!");
+            }
+
+
+
             Log.e(TAG, "Nothing to send!");
         }
     }
 
 
-/*
+/* @keencave
  * extract trend index from FRAM block #3 from the libre sensor
  * input: string with blucon answer to trend index request, including 6 starting protocol bytes
  * return: 2 byte string containing the next abolute block index to be read from
@@ -1058,7 +1069,7 @@ public class DexCollectionService extends Service {
         return(nowGlucoseIndex3);
     }
 
-/*
+/* @keencave
  * rescale raw BG reading to BG data format used in xDrip+
  * use 8.5 devider
  * raw format is in 1000 range
@@ -1074,11 +1085,11 @@ public class DexCollectionService extends Service {
         return((int) intermBg );
     }
 
-/*
+/* @keencave
  * extract BG reading from the raw data block containing the most recent BG reading
  * input: bytearray with blucon answer including 3 header protocol bytes
- * uses nowGlucoseOffset to calculate the offset of the two bytes neede
- * return: BG reading in float
+ * uses nowGlucoseOffset to calculate the offset of the two bytes needed
+ * return: BG reading as int
  */
 
     private int nowGetGlucoseValue(byte[] input)
