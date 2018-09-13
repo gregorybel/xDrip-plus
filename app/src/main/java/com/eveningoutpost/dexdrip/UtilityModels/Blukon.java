@@ -95,6 +95,8 @@ public class Blukon {
             }
         }
 
+        Log.e(TAG, "Returns m_communicationStarted=" + m_communicationStarted);
+
         return m_communicationStarted;
     }
 

@@ -1626,7 +1626,8 @@ public class DexCollectionService extends Service implements BtCallBack{
     private void watchdog() {
         if (last_time_seen == 0) return;
         if (prefs.getBoolean("bluetooth_watchdog", false)) {
-            if ((JoH.msSince(last_time_seen)) > 1200000) {
+            //if ((JoH.msSince(last_time_seen)) > 1200000) {
+            if ((JoH.msSince(last_time_seen)) > 1020000) {//17min
                 if (!JoH.isOngoingCall()) {
                     Log.e(TAG, "Watchdog triggered, attempting to reset bluetooth");
                     status("Watchdog triggered");

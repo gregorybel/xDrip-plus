@@ -72,9 +72,13 @@ public class MissedReadingService extends IntentService {
                         CollectionServiceStarter.restartCollectionService();
                     } else {
                         aggressive_backoff_timer = 120; // reset
+                        Log.e(TAG, "Bel: Aggressice service restart resets backoff timer");
                     }
+                } else {
+                    Log.e(TAG, "Bel: Aggressice service restart not called");
                 }
             }
+
 
 
             Reminder.processAnyDueReminders();
@@ -160,9 +164,9 @@ public class MissedReadingService extends IntentService {
 
     // alarmIn is relative time ms
     public void setAlarm(long alarmIn, boolean force) {
-        if (!force && (alarmIn < 5 * 60 * 1000)) {
+        if (!force && (alarmIn < 6 * 60 * 1000)) {
             // No need to check more than once every 5 minutes
-            alarmIn = 5 * 60 * 1000;
+            alarmIn = 6 * 60 * 1000;
         }
 
         alarmIn = Math.max(alarmIn, 5000); // don't try to set less than 5 seconds in the future
