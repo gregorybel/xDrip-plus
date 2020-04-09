@@ -2416,14 +2416,15 @@ public class ListenerService extends WearableListenerService implements GoogleAp
                                     changed = true;
                                     bgData.save();
                                 } else {
-                                    if (bgData.source_info != null && bgData.source_info.contains("Native")) {
+                                    if (true) {
+                                    //if (bgData.source_info != null && bgData.source_info.contains("Native")) {
                                         UserError.Log.d(TAG, "Saving BgData without calibration as source info is native");
                                         bgData.sensor = sensor;
                                         bgData.sensor_uuid = sensor.uuid;
                                         changed = true;
                                         bgData.save();
                                     } else {
-                                        Log.e(TAG, "syncBGData new BgReading calibrationUuid not found by byuuid; cannot save! calibrationUuid=" + calibrationUuid + " bgData.calibration_uuid=" + bgData.calibration_uuid + " bgData.uuid=" + bgData.uuid + " timeString=" + JoH.dateTimeText(bgData.timestamp));
+                                        Log.e(TAG, "syncBGData new BgReading calibrationUuid not found by byuuid; cannot save! calibrationUuid=" + calibrationUuid + " bgData.source_info=" +bgData.source_info + " bgData.calibration_uuid=" + bgData.calibration_uuid + " bgData.uuid=" + bgData.uuid + " timeString=" + JoH.dateTimeText(bgData.timestamp));
                                     }
                                 }
                             }
